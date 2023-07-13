@@ -1,5 +1,6 @@
 import fastapi.exception_handlers
 from fastapi import FastAPI, HTTPException, status
+from fastapi.exceptions import RequestValidationError
 
 from app.db import Conn
 
@@ -17,10 +18,6 @@ from .structure import (
     WaitRoomRequest,
     WaitRoomResponse,
 )
-from fastapi.exceptions import RequestValidationError
-
-from . import model
-from .auth import UserToken
 
 app = FastAPI()
 
@@ -44,6 +41,7 @@ async def root() -> dict:
 
 # User APIs
 
+
 @app.post("/user/create")
 def user_create(req: UserCreateRequest) -> UserCreateResponse:
     """新規ユーザー作成"""
@@ -62,6 +60,7 @@ def user_me(conn: Conn, token: UserToken) -> SafeUser:
     # 開発中以外は token をログに残してはいけない。
     return user
 
+
 @app.post("/user/update")
 def update(req: UserCreateRequest, conn: Conn, user: AuthorizedUser) -> Empty:
     """Update user attributes"""
@@ -70,6 +69,7 @@ def update(req: UserCreateRequest, conn: Conn, user: AuthorizedUser) -> Empty:
 
 
 # Room APIs
+
 
 @app.post("/room/create")
 def create(conn: Conn, user: AuthorizedUser, req: CreateRoomRequest) -> RoomID:
