@@ -43,7 +43,6 @@ def get_safe_user(conn: Conn, token: UserToken) -> SafeUser:
     user = get_user_by_token(conn, token)
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="user not found")
-    raise Exception("TEST")
     return user
 
 
