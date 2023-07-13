@@ -1,27 +1,21 @@
 import uuid
-from enum import IntEnum
 
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import NoResultFound
 
-from .db import engine
+from .db import Conn, engine
+from .structure import (
+    JoinRoomResult,
+    LiveDifficulty,
+    RoomInfo,
+    RoomUser,
+    SafeUser,
+    WaitRoomStatus,
+)
 
 
 class InvalidToken(Exception):
     """指定されたtokenが不正だったときに投げるエラー"""
-
-
-class SafeUser(BaseModel):
-    """token を含まないUser"""
-
-    id: int
-    name: str
-    leader_card_id: int
-
-    # SafeUser.from_orm(row) できるようにする
-    class Config:
-        orm_mode = True
 
 
 def create_user(name: str, leader_card_id: int) -> str:
@@ -42,34 +36,93 @@ def create_user(name: str, leader_card_id: int) -> str:
     return token
 
 
-def _get_user_by_token(conn, token: str) -> SafeUser | None:
-    # TODO: 実装(わからなかったら資料を見ながら)
-    ...
+def update_user(conn: Conn, user: SafeUser, name: str, leader_card_id: int) -> None:
+    conn.execute(
+        text(
+            "UPDATE user SET name = :name, leader_card_id = :leader_card_id WHERE id = :id"
+        ),
+        {"id": user.id, "name": name, "leader_card_id": leader_card_id},
+    )
 
 
-def get_user_by_token(token: str) -> SafeUser | None:
-    with engine.begin() as conn:
-        return _get_user_by_token(conn, token)
+def _create_empty_room(conn: Conn, live_id: int) -> int:
+    result = conn.execute(
+        text(
+            "INSERT INTO room (`live_id`, `user_count`, `room_status`) VALUES (:live_id, :user_count, :room_status)"
+        ),
+        {
+            "live_id": live_id,
+            "user_count": 0,
+            "room_status": WaitRoomStatus.waiting.value,
+        },
+    )
+    return result.lastrowid
 
 
-def update_user(token: str, name: str, leader_card_id: int) -> None:
-    with engine.begin() as conn:
-        # TODO: 実装
-        ...
+def _enter_room(
+    conn, room_id: int, user_id: int, difficulty: LiveDifficulty
+) -> JoinRoomResult:
+    result = conn.execute(
+        text(
+            "SELECT live_id, user_count, room_status FROM room WHERE id = :id FOR UPDATE"
+        ),
+        {"id": room_id},
+    )
+    try:
+        room = result.one()
+    except NoResultFound:
+        return JoinRoomResult.other_error
+    if room.user_count >= 4:
+        return JoinRoomResult.room_full
+    is_host = room.user_count == 0
+    conn.execute(
+        text(
+            "INSERT INTO room_member (`room_id`, `user_id`, `is_host`, `live_difficulty`) "
+            "VALUES(:room_id, :user_id, :is_host, :live_difficulty)"
+        ),
+        {
+            "room_id": room_id,
+            "user_id": user_id,
+            "is_host": is_host,
+            "live_difficulty": difficulty.value,
+        },
+    )
+    conn.execute(
+        text("UPDATE room SET user_count = user_count + 1 WHERE id = :room_id"),
+        {"room_id": room_id},
+    )
+    return JoinRoomResult.ok
 
 
-# IntEnum の使い方の例
-class LiveDifficulty(IntEnum):
-    """難易度"""
-
-    normal = 1
-    hard = 2
-
-
-def create_room(token: str, live_id: int, difficulty: LiveDifficulty):
+def create_room(
+    conn: Conn, user: SafeUser, live_id: int, difficulty: LiveDifficulty
+) -> int:
     """部屋を作ってroom_idを返します"""
-    with engine.begin() as conn:
-        user = _get_user_by_token(conn, token)
-        if user is None:
-            raise InvalidToken
-        # TODO: 実装
+    room_id = _create_empty_room(conn, live_id)
+    _enter_room(conn, room_id, user.id, difficulty)
+    return room_id
+
+
+def list_room(conn: Conn, live_id: int) -> list[RoomInfo]:
+    query_text = "SELECT * FROM room WHERE room_status = :room_status AND user_count < :max_user_count"
+    query_dict = {"room_status": WaitRoomStatus.waiting.value, "max_user_count": 4}
+    if live_id != 0:
+        query_text += " AND live_id = :live_id"
+        query_dict |= {"live_id": live_id}
+
+    result = conn.execute(text(query_text), query_dict)
+    rows = result.all()
+
+    return [
+        RoomInfo(
+            room_id=row.id,
+            live_id=row.live_id,
+            joined_user_count=row.user_count,
+            max_user_count=4,
+        )
+        for row in rows
+    ]
+
+
+def wait_room(room_id: int) -> tuple[WaitRoomStatus, list[RoomUser]]:
+    pass

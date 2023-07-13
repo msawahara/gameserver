@@ -1,9 +1,21 @@
 from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, Field
+
+from app.db import Conn
 
 from . import model
-from .auth import UserToken
-from .model import LiveDifficulty
+from .auth import AuthorizedUser, UserToken, get_user_by_token
+from .structure import (
+    CreateRoomRequest,
+    Empty,
+    ListRoomRequest,
+    ListRoomResponse,
+    RoomID,
+    SafeUser,
+    UserCreateRequest,
+    UserCreateResponse,
+    WaitRoomRequest,
+    WaitRoomResponse,
+)
 
 app = FastAPI(debug=True)
 
@@ -17,15 +29,6 @@ async def root() -> dict:
 # User APIs
 
 
-class UserCreateRequest(BaseModel):
-    user_name: str = Field(title="ユーザー名")
-    leader_card_id: int = Field(title="リーダーカードのID")
-
-
-class UserCreateResponse(BaseModel):
-    user_token: str
-
-
 @app.post("/user/create")
 def user_create(req: UserCreateRequest) -> UserCreateResponse:
     """新規ユーザー作成"""
@@ -36,8 +39,8 @@ def user_create(req: UserCreateRequest) -> UserCreateResponse:
 # 認証のサンプルAPI
 # ゲームでは使わない
 @app.get("/user/me")
-def user_me(token: UserToken) -> model.SafeUser:
-    user = model.get_user_by_token(token)
+def user_me(conn: Conn, token: UserToken) -> SafeUser:
+    user = get_user_by_token(conn, token)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     # print(f"user_me({token=}, {user=})")
@@ -45,33 +48,30 @@ def user_me(token: UserToken) -> model.SafeUser:
     return user
 
 
-class Empty(BaseModel):
-    pass
-
-
 @app.post("/user/update")
-def update(req: UserCreateRequest, token: UserToken) -> Empty:
+def update(req: UserCreateRequest, conn: Conn, user: AuthorizedUser) -> Empty:
     """Update user attributes"""
-    # print(req)
-    model.update_user(token, req.user_name, req.leader_card_id)
+    model.update_user(conn, user, req.user_name, req.leader_card_id)
     return Empty()
 
 
 # Room APIs
 
 
-class RoomID(BaseModel):
-    room_id: int
-
-
-class CreateRoomRequest(BaseModel):
-    live_id: int
-    select_difficulty: LiveDifficulty
-
-
 @app.post("/room/create")
-def create(token: UserToken, req: CreateRoomRequest) -> RoomID:
+def create(conn: Conn, user: AuthorizedUser, req: CreateRoomRequest) -> RoomID:
     """ルーム作成リクエスト"""
-    print("/room/create", req)
-    room_id = model.create_room(token, req.live_id, req.select_difficulty)
+    room_id = model.create_room(conn, user, req.live_id, req.select_difficulty)
     return RoomID(room_id=room_id)
+
+
+@app.post("/room/list")
+def room_list(conn: Conn, req: ListRoomRequest) -> ListRoomResponse:
+    room_info_list = model.list_room(conn, req.live_id)
+    return ListRoomResponse(room_info_list=room_info_list)
+
+
+@app.post("/room/wait")
+def room_wait(conn: Conn, req: WaitRoomRequest) -> WaitRoomResponse:
+    status, users = model.wait_room(req.room_id)
+    return WaitRoomResponse(status=status, room_user_list=users)
