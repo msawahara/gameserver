@@ -1,5 +1,6 @@
 import uuid
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.exc import NoResultFound
 
@@ -14,9 +15,14 @@ from .structure import (
 )
 
 
+class StrictBase(BaseModel):
+    """DBを利用するためのBaseModel"""
+    # strictモードを有効にする
+    model_config = ConfigDict(strict=True)
+
+
 class InvalidToken(Exception):
     """指定されたtokenが不正だったときに投げるエラー"""
-
 
 def create_user(name: str, leader_card_id: int) -> str:
     """Create new user and returns their token"""

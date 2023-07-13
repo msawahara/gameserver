@@ -1,3 +1,4 @@
+import fastapi.exception_handlers
 from fastapi import FastAPI, HTTPException, status
 
 from app.db import Conn
@@ -16,8 +17,23 @@ from .structure import (
     WaitRoomRequest,
     WaitRoomResponse,
 )
+from fastapi.exceptions import RequestValidationError
 
-app = FastAPI(debug=True)
+from . import model
+from .auth import UserToken
+
+app = FastAPI()
+
+
+# リクエストのvalidation errorをprintする
+# このエラーが出たら、リクエストのModel定義が間違っている
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(req, exc):
+    print("Request validation error")
+    print(f"{req.url=}\n{exc.body=}\n{exc=!s}")
+    return await fastapi.exception_handlers.request_validation_exception_handler(
+        req, exc
+    )
 
 
 # Sample API
@@ -28,7 +44,6 @@ async def root() -> dict:
 
 # User APIs
 
-
 @app.post("/user/create")
 def user_create(req: UserCreateRequest) -> UserCreateResponse:
     """新規ユーザー作成"""
@@ -36,8 +51,8 @@ def user_create(req: UserCreateRequest) -> UserCreateResponse:
     return UserCreateResponse(user_token=token)
 
 
-# 認証のサンプルAPI
-# ゲームでは使わない
+# 認証動作確認用のサンプルAPI
+# ゲームアプリは使わない
 @app.get("/user/me")
 def user_me(conn: Conn, token: UserToken) -> SafeUser:
     user = get_user_by_token(conn, token)
@@ -47,7 +62,6 @@ def user_me(conn: Conn, token: UserToken) -> SafeUser:
     # 開発中以外は token をログに残してはいけない。
     return user
 
-
 @app.post("/user/update")
 def update(req: UserCreateRequest, conn: Conn, user: AuthorizedUser) -> Empty:
     """Update user attributes"""
@@ -56,7 +70,6 @@ def update(req: UserCreateRequest, conn: Conn, user: AuthorizedUser) -> Empty:
 
 
 # Room APIs
-
 
 @app.post("/room/create")
 def create(conn: Conn, user: AuthorizedUser, req: CreateRoomRequest) -> RoomID:
