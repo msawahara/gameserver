@@ -1,6 +1,6 @@
 from enum import IntEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Enum
 
@@ -36,9 +36,7 @@ class SafeUser(BaseModel):
     name: str
     leader_card_id: int
 
-    # SafeUser.from_orm(row) できるようにする
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # User APIs
